@@ -1,4 +1,4 @@
-/* global __firebase_config, __app_id */
+/* global __firebase_config */
 import React, { useState, useEffect, useRef, useCallback } from 'react';
 import { initializeApp } from 'firebase/app';
 import { 
@@ -13,12 +13,12 @@ import { getFirestore, doc, setDoc, getDoc, collection, addDoc, getDocs, query, 
 
 // --- Firebase Configuration ---
 const firebaseConfig = typeof __firebase_config !== 'undefined' ? JSON.parse(__firebase_config) : {
-    apiKey: "AIzaSyC2AILVWciRLUp1xI9Hj0DU1kt5Am22CqU",
-    authDomain: "dfu-analyzer-app.firebaseapp.com",
-    projectId: "dfu-analyzer-app",
-    storageBucket: "dfu-analyzer-app.appspot.com",
-    messagingSenderId: "525736393577",
-    appId: "1:525736393577:web:5459df0d86c118e5909bf8"
+    apiKey:process.env.REACT_APP_FIREBASE_API_KEY,
+    authDomain: process.env.REACT_APP_FIREBASE_AUTH_DOMAIN,
+    projectId: process.env.REACT_APP_FIREBASE_PROJECT_ID,
+    storageBucket: process.env.REACT_APP_FIREBASE_STORAGE_BUCKET,
+    messagingSenderId: process.env.REACT_APP_FIREBASE_MESSAGING_SENDER_ID,
+    appId:process.env.REACT_APP_FIREBASE_APP_ID
 };
 
 const app = initializeApp(firebaseConfig);
@@ -67,17 +67,6 @@ const Header = ({ title, subtitle, action }) => (
         </div>
     </div>
 );
-
-const Tooltip = ({ text, children }) => (
-    <div className="relative flex items-center group">
-        {children}
-        <div className="absolute bottom-0 flex-col items-center hidden mb-6 group-hover:flex w-64">
-            <span className="relative z-10 p-2 text-xs leading-none text-white whitespace-no-wrap bg-black shadow-lg rounded-md">{text}</span>
-            <div className="w-3 h-3 -mt-2 rotate-45 bg-black"></div>
-        </div>
-    </div>
-);
-
 
 // --- Page Components ---
 const Sidebar = ({ activePage, setActivePage, handleSignOut }) => {
@@ -364,7 +353,7 @@ const AnalyzeTool = ({ onAnalysisComplete, user, setTempAnalysis }) => {
                 ]
             };
             
-            const apiKey = "AIzaSyAR6QbvZl_g4L44A0DfiZ6JHSG3rqLEbXs";
+            const apiKey = process.env.REACT_APP_GOOGLE_API_KEY;
             const apiUrl = `https://generativelanguage.googleapis.com/v1beta/models/gemini-2.0-flash:generateContent?key=${apiKey}`;
 
             const response = await fetch(apiUrl, {
@@ -851,22 +840,7 @@ const ProfilePage = ({ user, profile, setProfile }) => {
                         </button>
                     </div>
                 </div>
-             
             </div>
-          
-               <p>
-
-    &nbsp;  &nbsp;  &nbsp;<b>Type 1 Diabetes:</b> This is an autoimmune condition where the body's immune system attacks and destroys the insulin-producing cells in the pancreas. People with Type 1  &nbsp;  &nbsp;  &nbsp;   &nbsp;  &nbsp;diabetes need to take insulin every day to live. It's usually diagnosed in children and young adults.
-<br></br>
-<br></br>
- &nbsp;  &nbsp;  &nbsp;<b>Type 2 Diabetes:</b> This is the most common type. With Type 2, your body either doesn’t use insulin properly or can't make enough to keep your blood sugar at normal&nbsp;  &nbsp;  &nbsp;   &nbsp;  &nbsp;   &nbsp;  &nbsp;  &nbsp;levels. It's often linked to lifestyle factors and genetics and is typically diagnosed in adults.
-<br></br><br></br>
- &nbsp;  &nbsp;  &nbsp;<b>Gestational Diabetes:</b> This type develops in some women during pregnancy and usually goes away after the baby is born. However, having it increases the risk of  &nbsp;  &nbsp;  &nbsp;   &nbsp;  &nbsp;  &nbsp;  &nbsp;  &nbsp;   &nbsp;  &nbsp;developing Type 2 diabetes later in life.
-<br></br><br></br>
- &nbsp;  &nbsp;  &nbsp;<b>Pre-diabetes:</b> This is a condition where blood sugar levels are higher than normal but not yet high enough to be diagnosed as Type 2 diabetes. It's a critical warning sign,&nbsp;  &nbsp;  &nbsp;  &nbsp;  &nbsp;and with lifestyle changes, it's often possible to prevent it from progressing to full-blown diabetes.
-<br></br><br></br>
- &nbsp;  &nbsp;  &nbsp;<b>Other: </b>This is a catch-all category for less common types of diabetes, such as those caused by specific genetic syndromes or certain medications.
-<br></br></p><br></br>
         </div>
     );
 };
@@ -944,6 +918,19 @@ export default function App() {
     const [history, setHistory] = useState([]);
     const [tempAnalysis, setTempAnalysis] = useState(null); // For guest analysis
 
+    const addAnalysisToHistory = useCallback(async (predictionText, targetUser = user) => {
+        const newHistoryItem = { prediction: predictionText, timestamp: new Date() };
+        
+        if (targetUser && !targetUser.isAnonymous) {
+            const docRef = await addDoc(collection(db, `users/${targetUser.uid}/history`), newHistoryItem);
+            setHistory(prev => [{ id: docRef.id, ...newHistoryItem }, ...prev]);
+        } else {
+            // It's a guest, store it temporarily
+            setTempAnalysis(newHistoryItem);
+            alert("Create an account to save this analysis and view your history!");
+        }
+    }, [user]);
+
     useEffect(() => {
         const unsubscribe = onAuthStateChanged(auth, async (currentUser) => {
             setUser(currentUser);
@@ -970,24 +957,10 @@ export default function App() {
             setIsLoading(false);
         });
         return () => unsubscribe();
-    }, [tempAnalysis]);
+    }, [tempAnalysis, addAnalysisToHistory]);
 
     const handleSignOut = async () => {
         await signOut(auth);
-    };
-    
-    const addAnalysisToHistory = async (predictionText, targetUser = user) => {
-        const newHistoryItem = { prediction: predictionText, timestamp: new Date() };
-        
-        if (targetUser && !targetUser.isAnonymous) {
-            const docRef = await addDoc(collection(db, `users/${targetUser.uid}/history`), newHistoryItem);
-            setHistory(prev => [{ id: docRef.id, ...newHistoryItem }, ...prev]);
-        } else {
-            // It's a guest, store it temporarily
-            setTempAnalysis(newHistoryItem);
-            alert("Create an account to save this analysis and view your history!");
-         
-        }
     };
     
     const clearHistory = async () => {
