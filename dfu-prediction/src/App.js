@@ -7,9 +7,12 @@ import {
     createUserWithEmailAndPassword, 
     signInWithEmailAndPassword, 
     signOut,
-    signInAnonymously
+    signInAnonymously,
+    setPersistence,
+    browserLocalPersistence,
+    browserSessionPersistence
 } from 'firebase/auth';
-import { getFirestore, doc, setDoc, getDoc, collection, addDoc, getDocs, query, orderBy, deleteDoc } from 'firebase/firestore';
+import { getFirestore, doc, setDoc, getDoc, collection, addDoc, getDocs, query, orderBy, deleteDoc, Timestamp } from 'firebase/firestore';
 
 // --- Firebase Configuration ---
 const firebaseConfig = typeof __firebase_config !== 'undefined' ? JSON.parse(__firebase_config) : {
@@ -25,7 +28,25 @@ const app = initializeApp(firebaseConfig);
 const auth = getAuth(app);
 const db = getFirestore(app);
 
-// --- Professional Icons ---
+// --- HELPER FUNCTIONS ---
+const safeFormatDate = (timestamp) => {
+    if (!timestamp) return 'N/A';
+    let date;
+    if (timestamp && typeof timestamp.toDate === 'function') {
+        date = timestamp.toDate();
+    } else {
+        date = new Date(timestamp);
+    }
+    if (isNaN(date.getTime())) {
+        return 'Invalid Date';
+    }
+    return date.toLocaleString('en-US', {
+        month: 'short', day: 'numeric', year: 'numeric',
+        hour: '2-digit', minute: '2-digit'
+    });
+};
+
+// --- ICON COMPONENTS ---
 const Icon = ({ children, className = "w-6 h-6" }) => (
     <svg xmlns="http://www.w3.org/2000/svg" fill="none" viewBox="0 0 24 24" strokeWidth="1.5" stroke="currentColor" className={className}>
         {children}
@@ -44,20 +65,24 @@ const ICONS = {
     warning: <path strokeLinecap="round" strokeLinejoin="round" d="M12 9v3.75m-9.303 3.376c-.866 1.5.217 3.374 1.948 3.374h14.71c1.73 0 2.813-1.874 1.948-3.374L13.949 3.378c-.866-1.5-3.032-1.5-3.898 0L2.697 16.126zM12 15.75h.007v.008H12v-.008z" />,
     shield: <path strokeLinecap="round" strokeLinejoin="round" d="M9 12.75L11.25 15 15 9.75m-3-7.036A11.959 11.959 0 013.598 6 11.99 11.99 0 003 9.749c0 5.592 3.824 10.29 9 11.623 5.176-1.332 9-6.03 9-11.623 0-1.31-.21-2.571-.598-3.751h-.152c-3.196 0-6.1-1.248-8.25-3.285z" />,
     logout: <path strokeLinecap="round" strokeLinejoin="round" d="M15.75 9V5.25A2.25 2.25 0 0013.5 3h-6a2.25 2.25 0 00-2.25 2.25v13.5A2.25 2.25 0 007.5 21h6a2.25 2.25 0 002.25-2.25V15m3 0l3-3m0 0l-3-3m3 3H9" />,
-    email: <path strokeLinecap="round" strokeLinejoin="round" d="M21.75 6.75v10.5a2.25 2.25 0 01-2.25 2.25h-15a2.25 2.25 0 01-2.25-2.25V6.75m19.5 0A2.25 2.25 0 0019.5 4.5h-15a2.25 2.25 0 00-2.25 2.25m19.5 0v.243a2.25 2.25 0 01-1.07 1.916l-7.5 4.615a2.25 2.25 0 01-2.36 0L3.32 8.91a2.25 2.25 0 01-1.07-1.916V6.75" />,
-    info: <path strokeLinecap="round" strokeLinejoin="round" d="M11.25 11.25l.041-.02a.75.75 0 011.063.852l-.708 2.836a.75.75 0 001.063.853l.041-.021M21 12a9 9 0 11-18 0 9 9 0 0118 0zm-9-3.75h.008v.008H12V8.25z" />
+    info: <path strokeLinecap="round" strokeLinejoin="round" d="M11.25 11.25l.041-.02a.75.75 0 011.063.852l-.708 2.836a.75.75 0 001.063.853l.041-.021M21 12a9 9 0 11-18 0 9 9 0 0118 0zm-9-3.75h.008v.008H12V8.25z" />,
+    hospital: <path strokeLinecap="round" strokeLinejoin="round" d="M8.25 18.75a1.5 1.5 0 01-3 0m3 0a1.5 1.5 0 00-3 0m3 0h6m-9 0H3.375a1.125 1.125 0 01-1.125-1.125V14.25m17.25 4.5a1.5 1.5 0 01-3 0m3 0a1.5 1.5 0 00-3 0m3 0h1.125c.621 0 1.125-.504 1.125-1.125V14.25m-17.25 4.5v-1.875a3.375 3.375 0 00-3.375-3.375h-1.5a1.125 1.125 0 01-1.125-1.125v-1.5A3.375 3.375 0 006.375 7.5H12m0 0V6a3 3 0 10-6 0v1.5m6 0a3 3 0 106 0V6m-6 6h.008v.008H12v-.008zm-3 0h.008v.008H9v-.008zm6 0h.008v.008H15v-.008z" />,
+    medicine: <path strokeLinecap="round" strokeLinejoin="round" d="M12 6.75a.75.75 0 110-1.5.75.75 0 010 1.5zM12 12.75a.75.75 0 110-1.5.75.75 0 010 1.5zM12 18.75a.75.75 0 110-1.5.75.75 0 010 1.5z" />,
+    healthLog: <path strokeLinecap="round" strokeLinejoin="round" d="M19.5 14.25v-2.625a3.375 3.375 0 00-3.375-3.375h-1.5A1.125 1.125 0 0113.5 7.125v-1.5a3.375 3.375 0 00-3.375-3.375H8.25m0 12.75h7.5m-7.5 3H3V10.5a2.25 2.25 0 012.25-2.25h1.5A2.25 2.25 0 019 10.5v8.25" />,
+    trash: <path strokeLinecap="round" strokeLinejoin="round" d="M14.74 9l-.346 9m-4.788 0L9.26 9m9.968-3.21c.342.052.682.107 1.022.166m-1.022-.165L18.16 19.673a2.25 2.25 0 01-2.244 2.077H8.084a2.25 2.25 0 01-2.244-2.077L4.772 5.79m14.456 0a48.108 48.108 0 00-3.478-.397m-12 .562c.34-.059.68-.114 1.022-.165m0 0a48.11 48.11 0 013.478-.397m7.5 0v-.916c0-1.18-.91-2.134-2.09-2.134H8.09a2.09 2.09 0 00-2.09 2.134v.916m7.5 0a48.667 48.667 0 00-7.5 0" />,
+    calendar: <path strokeLinecap="round" strokeLinejoin="round" d="M6.75 3v2.25M17.25 3v2.25M3 18.75V7.5a2.25 2.25 0 012.25-2.25h13.5A2.25 2.25 0 0121 7.5v11.25m-18 0A2.25 2.25 0 005.25 21h13.5A2.25 2.25 0 0021 18.75m-18 0h18M-4.5 12h18" />,
+    menu: <path strokeLinecap="round" strokeLinejoin="round" d="M3.75 6.75h16.5M3.75 12h16.5m-16.5 5.25h16.5" />
 };
 
-// --- Helper Components ---
 const LoadingSpinner = ({ text }) => (
     <div className="flex items-center justify-center space-x-2">
-        <div className="w-6 h-6 animate-spin rounded-full border-2 border-gray-300 border-t-blue-600"></div>
+        <div className="w-6 h-6 animate-spin rounded-full border-2 border-gray-300 border-t-teal-600"></div>
         {text && <span className="text-gray-600">{text}</span>}
     </div>
 );
 
 const Header = ({ title, subtitle, action }) => (
-    <div className="bg-white shadow-sm border-b border-gray-200 px-6 py-4">
+    <div className="bg-white/80 backdrop-blur-sm shadow-sm border-b border-gray-200 px-6 py-4">
         <div className="flex justify-between items-center max-w-7xl mx-auto">
             <div>
                 <h1 className="text-2xl font-bold text-gray-900">{title}</h1>
@@ -68,12 +93,14 @@ const Header = ({ title, subtitle, action }) => (
     </div>
 );
 
-// --- Page Components ---
+
+// --- UI COMPONENTS ---
 const Sidebar = ({ activePage, setActivePage, handleSignOut }) => {
     const navItems = [
         { id: 'dashboard', label: 'Dashboard', icon: ICONS.dashboard },
         { id: 'analyze', label: 'AI Analysis', icon: ICONS.analyze },
         { id: 'history', label: 'History', icon: ICONS.history },
+        { id: 'healthLog', label: 'Health Log', icon: ICONS.healthLog },
         { id: 'education', label: 'Education', icon: ICONS.education },
         { id: 'profile', label: 'Profile', icon: ICONS.profile },
     ];
@@ -82,18 +109,11 @@ const Sidebar = ({ activePage, setActivePage, handleSignOut }) => {
         <aside className="w-72 bg-white shadow-lg border-r border-gray-200 flex flex-col">
             <div className="p-6 border-b border-gray-200">
                 <div className="flex items-center space-x-3">
-                   <img 
-  src="/logo3.png" 
-  alt="DFU Logo" 
-  style={{ 
-    width: "50px", 
-    height: "80px", 
-    
-    padding: "10px", 
-    borderRadius: "10px" 
-  }} 
-/>
-
+                    <img 
+                        src="/logo3.png" 
+                        alt="DFU Logo" 
+                        style={{ width: "50px", height: "80px", padding: "10px", borderRadius: "10px" }} 
+                    />
                     <div>
                         <h1 className="text-xl font-bold text-gray-900">DFU Analyzer</h1>
                         <p className="text-xs text-gray-500">AI-Powered Diagnostics</p>
@@ -108,7 +128,7 @@ const Sidebar = ({ activePage, setActivePage, handleSignOut }) => {
                             onClick={() => setActivePage(item.id)}
                             className={`w-full flex items-center space-x-3 px-4 py-3 rounded-xl transition-all duration-200 text-left ${
                                 activePage === item.id
-                                    ? 'bg-gradient-to-r from-blue-600 to-indigo-600 text-white shadow-lg shadow-blue-500/25'
+                                    ? 'bg-gradient-to-r from-teal-500 to-cyan-500 text-white shadow-lg shadow-teal-500/25'
                                     : 'text-gray-700 hover:bg-gray-100 hover:text-gray-900'
                             }`}
                         >
@@ -131,35 +151,35 @@ const Sidebar = ({ activePage, setActivePage, handleSignOut }) => {
     );
 };
 
-const StatsCard = ({ title, value, icon }) => (
-    <div className="bg-white rounded-xl shadow-sm border border-gray-200 p-6 hover:shadow-md transition-shadow">
+const StatsCard = ({ title, value, icon, color = 'teal' }) => (
+    <div className="bg-white/80 backdrop-blur-sm rounded-xl shadow-sm border border-gray-200 p-6 hover:shadow-md transition-shadow">
         <div className="flex items-center justify-between">
             <div>
                 <p className="text-sm font-medium text-gray-600">{title}</p>
                 <p className="text-3xl font-bold text-gray-900 mt-2">{value}</p>
             </div>
-            <div className="p-3 bg-blue-50 rounded-xl">
-                <Icon className="w-6 h-6 text-blue-600">{icon}</Icon>
+            <div className={`p-3 bg-${color}-100 rounded-xl`}>
+                <Icon className={`w-6 h-6 text-${color}-600`}>{icon}</Icon>
             </div>
         </div>
     </div>
 );
 
-const Dashboard = ({ setActivePage, history, profile }) => {
+// --- PAGE COMPONENTS ---
+const PageWrapper = ({ children }) => (
+    <div className="h-full overflow-y-auto">
+        {children}
+    </div>
+);
+
+// --- PAGE COMPONENTS ---
+
+const Dashboard = ({ setActivePage, history, profile, healthLog, appointment }) => {
     const latestAnalysis = history.length > 0 ? history[0] : null;
     const userName = profile?.name ? `, ${profile.name}` : '';
+    
+    const isAppointmentPast = appointment && appointment.date && appointment.time && new Date(`${appointment.date}T${appointment.time}`) < new Date();
 
-    const formatDate = (timestamp) => {
-        if (!timestamp) return 'N/A';
-        const date = timestamp.toDate ? timestamp.toDate() : new Date(timestamp);
-        return date.toLocaleDateString('en-US', {
-            month: 'short',
-            day: 'numeric',
-            year: 'numeric',
-            hour: '2-digit',
-            minute: '2-digit'
-        });
-    };
 
     const getTimeOfDayGreeting = () => {
         const hour = new Date().getHours();
@@ -169,14 +189,16 @@ const Dashboard = ({ setActivePage, history, profile }) => {
     };
 
     return (
+        
         <div className="min-h-screen bg-gray-50">
+            
             <Header 
                 title={`${getTimeOfDayGreeting()}${userName}`}
                 subtitle="Let's keep your feet healthy together"
                 action={
                     <button 
                         onClick={() => setActivePage('analyze')}
-                        className="bg-gradient-to-r from-blue-600 to-indigo-600 text-white font-semibold px-6 py-3 rounded-xl flex items-center space-x-2 hover:from-blue-700 hover:to-indigo-700 transition-all shadow-lg shadow-blue-500/25"
+                        className="bg-gradient-to-r from-teal-500 to-cyan-500 text-white font-semibold px-6 py-3 rounded-xl flex items-center space-x-2 hover:from-teal-600 hover:to-cyan-600 transition-all shadow-lg shadow-teal-500/25"
                     >
                         <Icon className="w-5 h-5">{ICONS.analyze}</Icon>
                         <span>New Analysis</span>
@@ -185,31 +207,52 @@ const Dashboard = ({ setActivePage, history, profile }) => {
             />
 
             <div className="max-w-7xl mx-auto p-6">
+                
                 {!profile?.name && (
-                    <div className="bg-gradient-to-r from-blue-600 to-indigo-600 rounded-2xl p-8 mb-8 text-white">
+                    <div className="bg-gradient-to-r from-teal-500 to-cyan-500 rounded-2xl p-8 mb-8 text-white">
                         <div className="flex justify-between items-center">
                             <div>
                                 <h2 className="text-2xl font-bold mb-2">Welcome to DFU Analyzer</h2>
-                                <p className="text-blue-100">Get started by setting up your health profile for personalized insights and better care management.</p>
+                                <p className="text-cyan-100">Get started by setting up your health profile for personalized insights and better care management.</p>
                             </div>
                             <button 
                                 onClick={() => setActivePage('profile')}
-                                className="bg-white text-blue-600 font-semibold px-6 py-3 rounded-xl hover:bg-gray-100 transition-colors"
+                                className="bg-white text-teal-600 font-semibold px-6 py-3 rounded-xl hover:bg-gray-100 transition-colors"
                             >
                                 Set Up Profile
                             </button>
                         </div>
                     </div>
                 )}
+                
+                {appointment && !isAppointmentPast && (
+                     <div className="bg-amber-50 border-l-4 border-amber-400 p-4 mb-6 rounded-r-lg">
+                        <h4 className="font-bold text-amber-800">Upcoming Appointment</h4>
+                        <p className="text-amber-700">You have an appointment on {new Date(appointment.date).toLocaleDateString()} at {appointment.time}.</p>
+                    </div>
+                )}
+                
+                {isAppointmentPast && (
+                     <div className="bg-gray-100 border-l-4 border-gray-400 p-4 mb-6 rounded-r-lg flex justify-between items-center">
+                        <div>
+                            <h4 className="font-bold text-gray-800">Follow-Up Needed</h4>
+                            <p className="text-gray-700">Your last scheduled appointment has passed. Please schedule a new one.</p>
+                        </div>
+                        <button 
+                            onClick={() => setActivePage('healthLog')}
+                            className="bg-teal-500 text-white font-semibold px-4 py-2 rounded-lg hover:bg-teal-600 transition-colors"
+                        >
+                            Schedule Now
+                        </button>
+                    </div>
+                )}
+
 
                 <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-4 gap-6 mb-8">
-                    <StatsCard title="Total Analyses" value={history.length} icon={ICONS.chart} />
-                    <StatsCard title="This Month" value={history.filter(item => {
-                        const date = item.timestamp?.toDate ? item.timestamp.toDate() : new Date(item.timestamp);
-                        return date && new Date(date).getMonth() === new Date().getMonth();
-                    }).length} icon={ICONS.analyze} />
-                    <StatsCard title="Profile Complete" value={profile?.name ? "100%" : "0%"} icon={ICONS.profile} />
-                    <StatsCard title="Health Score" value="Good" icon={ICONS.shield} />
+                    <StatsCard title="Total Analyses" value={history.length} icon={ICONS.chart} color="teal"/>
+                    <StatsCard title="Health Logs" value={healthLog.length} icon={ICONS.healthLog} color="amber"/>
+                    <StatsCard title="Profile Complete" value={profile?.name ? "100%" : "0%"} icon={ICONS.profile} color="violet"/>
+                    <StatsCard title="Health Score" value="Good" icon={ICONS.shield} color="green"/>
                 </div>
 
                 <div className="grid grid-cols-1 lg:grid-cols-3 gap-8">
@@ -220,18 +263,18 @@ const Dashboard = ({ setActivePage, history, profile }) => {
                                 <div className="flex flex-col md:flex-row space-y-4 md:space-y-0 md:space-x-6">
                                     <div className="flex-1">
                                         <div className="flex items-center space-x-2 mb-3">
-                                            <span className="inline-flex items-center px-3 py-1 rounded-full text-xs font-medium bg-blue-100 text-blue-800">Latest</span>
-                                            <span className="text-sm text-gray-500">{formatDate(latestAnalysis.timestamp)}</span>
+                                            <span className="inline-flex items-center px-3 py-1 rounded-full text-xs font-medium bg-teal-100 text-teal-800">Latest</span>
+                                            <span className="text-sm text-gray-500">{safeFormatDate(latestAnalysis.timestamp)}</span>
                                         </div>
                                         <p className="text-gray-700 leading-relaxed">{latestAnalysis.prediction.substring(0, 250)}...</p>
-                                        <button onClick={() => setActivePage('history')} className="mt-4 text-blue-600 font-medium hover:text-blue-700 transition-colors">View Full Analysis →</button>
+                                        <button onClick={() => setActivePage('history')} className="mt-4 text-teal-600 font-medium hover:text-teal-700 transition-colors">View Full Analysis →</button>
                                     </div>
                                 </div>
                             ) : (
                                 <div className="text-center py-12">
                                     <Icon className="w-16 h-16 text-gray-300 mx-auto mb-4">{ICONS.analyze}</Icon>
                                     <p className="text-gray-500 mb-4">No recent analyses found</p>
-                                    <button onClick={() => setActivePage('analyze')} className="bg-blue-600 text-white px-6 py-3 rounded-xl hover:bg-blue-700 transition-colors">Start Your First Analysis</button>
+                                    <button onClick={() => setActivePage('analyze')} className="bg-teal-500 text-white px-6 py-3 rounded-xl hover:bg-teal-600 transition-colors">Start Your First Analysis</button>
                                 </div>
                             )}
                         </div>
@@ -241,7 +284,7 @@ const Dashboard = ({ setActivePage, history, profile }) => {
                             <h3 className="text-xl font-bold text-gray-900 mb-6">Daily Health Tips</h3>
                             <div className="space-y-4">
                                 <div className="p-4 bg-green-50 rounded-xl border border-green-200"><h4 className="font-semibold text-green-800 mb-2">Daily Inspection</h4><p className="text-sm text-green-700">Check your feet daily for cuts, sores, or swelling.</p></div>
-                                <div className="p-4 bg-blue-50 rounded-xl border border-blue-200"><h4 className="font-semibold text-blue-800 mb-2">Proper Hygiene</h4><p className="text-sm text-blue-700">Wash feet daily with warm water and dry thoroughly.</p></div>
+                                <div className="p-4 bg-cyan-50 rounded-xl border border-cyan-200"><h4 className="font-semibold text-cyan-800 mb-2">Proper Hygiene</h4><p className="text-sm text-cyan-700">Wash feet daily with warm water and dry thoroughly.</p></div>
                             </div>
                             <button onClick={() => setActivePage('education')} className="w-full mt-6 bg-gray-100 text-gray-700 font-medium py-3 rounded-xl hover:bg-gray-200 transition-colors">View All Tips</button>
                         </div>
@@ -251,8 +294,7 @@ const Dashboard = ({ setActivePage, history, profile }) => {
         </div>
     );
 };
-
-const AnalyzeTool = ({ onAnalysisComplete, user, setTempAnalysis }) => {
+const AnalyzeTool = ({ onAnalysisComplete }) => {
     const [imageSrc, setImageSrc] = useState(null);
     const [base64ImageData, setBase64ImageData] = useState(null);
     const [isLoading, setIsLoading] = useState(false);
@@ -260,6 +302,7 @@ const AnalyzeTool = ({ onAnalysisComplete, user, setTempAnalysis }) => {
     const [prediction, setPrediction] = useState(null);
     const [isWebcamOpen, setIsWebcamOpen] = useState(false);
     const [facingMode, setFacingMode] = useState('environment');
+    const [dynamicLinks, setDynamicLinks] = useState(null);
     const webcamVideoRef = useRef(null);
 
     const handleImageUpload = (event) => {
@@ -278,6 +321,7 @@ const AnalyzeTool = ({ onAnalysisComplete, user, setTempAnalysis }) => {
                 setImageSrc(e.target.result);
                 setBase64ImageData(e.target.result.split(',')[1]);
                 setPrediction(null);
+                setDynamicLinks(null);
                 setError(null);
             };
             reader.readAsDataURL(file);
@@ -289,12 +333,12 @@ const AnalyzeTool = ({ onAnalysisComplete, user, setTempAnalysis }) => {
             webcamVideoRef.current.srcObject.getTracks().forEach(track => track.stop());
         }
         try {
-            const stream = await navigator.mediaDevices.getUserMedia({ 
-                video: { 
+            const stream = await navigator.mediaDevices.getUserMedia({
+                video: {
                     facingMode: facingMode,
                     width: { ideal: 1280 },
                     height: { ideal: 720 }
-                } 
+                }
             });
             if (webcamVideoRef.current) {
                 webcamVideoRef.current.srcObject = stream;
@@ -305,7 +349,7 @@ const AnalyzeTool = ({ onAnalysisComplete, user, setTempAnalysis }) => {
             setError("Could not access camera. Please ensure you have granted permission and try again.");
         }
     }, [facingMode]);
-    
+
     const toggleCamera = () => {
         setFacingMode(prev => prev === 'user' ? 'environment' : 'user');
     };
@@ -332,14 +376,56 @@ const AnalyzeTool = ({ onAnalysisComplete, user, setTempAnalysis }) => {
         const dataUrl = canvas.toDataURL('image/jpeg', 0.8);
         setImageSrc(dataUrl);
         setBase64ImageData(dataUrl.split(',')[1]);
+        setPrediction(null);
+        setDynamicLinks(null);
         stopWebcam();
         setError(null);
+    };
+
+    const findNearbyDoctors = () => {
+        if (navigator.geolocation) {
+            navigator.geolocation.getCurrentPosition(
+                (position) => {
+                    const { latitude, longitude } = position.coords;
+                    const searchQueries = [
+                        { name: 'Podiatrist (Foot Specialist)', query: 'podiatrist' },
+                        { name: 'Wound Care Clinic', query: 'wound+care+clinic' },
+                        { name: 'Hospital Near Me', query: 'hospital' },
+                    ];
+                    
+                    const links = searchQueries.map(item => ({
+                        name: item.name,
+                        mapsLink: `https://www.google.com/maps/search/?api=1&query=${item.query}&ll=${latitude},${longitude}`
+                    }));
+    
+                    setDynamicLinks(links);
+                },
+                () => {
+                    const genericLinks = [
+                         { name: 'Podiatrist (Foot Specialist)', mapsLink: 'https://www.google.com/maps/search/?api=1&query=podiatrist' },
+                         { name: 'Wound Care Clinic', mapsLink: 'https://www.google.com/maps/search/?api=1&query=wound+care+clinic' },
+                         { name: 'Hospital Near Me', mapsLink: 'https://www.google.com/maps/search/?api=1&query=hospital' }
+                    ];
+                    setDynamicLinks(genericLinks);
+                    alert("Could not access your location. Showing generic search links instead.");
+                }
+            );
+        } else {
+             const genericLinks = [
+                 { name: 'Podiatrist (Foot Specialist)', mapsLink: 'https://www.google.com/maps/search/?api=1&query=podiatrist' },
+                 { name: 'Wound Care Clinic', mapsLink: 'https://www.google.com/maps/search/?api=1&query=wound+care+clinic' },
+                 { name: 'Hospital Near Me', mapsLink: 'https://www.google.com/maps/search/?api=1&query=hospital' }
+            ];
+            setDynamicLinks(genericLinks);
+            alert("Geolocation is not supported by your browser. Showing generic search links.");
+        }
     };
 
     const handlePrediction = async () => {
         setIsLoading(true);
         setError(null);
         setPrediction(null);
+        setDynamicLinks(null);
         
         try {
             const prompt = `You are an expert AI assistant specializing in the visual analysis of foot imagery for informational purposes. Your task is to analyze the provided image and give a two-part response.
@@ -387,6 +473,11 @@ const AnalyzeTool = ({ onAnalysisComplete, user, setTempAnalysis }) => {
                 const fullText = result.candidates[0].content.parts[0].text;
                 setPrediction(fullText);
                 onAnalysisComplete(fullText);
+                
+                if (fullText.toLowerCase().includes('warrant a consultation')) {
+                    findNearbyDoctors();
+                }
+
             } else {
                 throw new Error("The model did not return a valid response.");
             }
@@ -399,17 +490,17 @@ const AnalyzeTool = ({ onAnalysisComplete, user, setTempAnalysis }) => {
     };
 
     return (
-        <div className="min-h-screen bg-gray-50">
+        <PageWrapper>
             <Header 
                 title="AI-Powered Foot Analysis"
                 subtitle="Upload or capture an image for instant AI analysis"
             />
 
             <div className="max-w-4xl mx-auto p-6">
-                <div className="bg-white rounded-2xl shadow-sm border border-gray-200 p-8">
+                <div className="bg-white/80 backdrop-blur-sm rounded-2xl shadow-sm border border-gray-200 p-8">
                     {/* Image Upload/Preview Area */}
                     <div className="mb-8">
-                        <div className="w-full h-96 bg-gradient-to-br from-gray-50 to-gray-100 rounded-2xl flex items-center justify-center mb-6 border-2 border-dashed border-gray-300 hover:border-blue-400 transition-colors">
+                        <div className="w-full h-96 bg-gray-200/50 backdrop-blur-sm rounded-2xl flex items-center justify-center mb-6 border-2 border-dashed border-gray-300 hover:border-teal-400 transition-colors">
                             {imageSrc ? (
                                 <div className="relative">
                                     <img 
@@ -418,7 +509,7 @@ const AnalyzeTool = ({ onAnalysisComplete, user, setTempAnalysis }) => {
                                         className="max-w-full max-h-96 object-contain rounded-xl shadow-lg"
                                     />
                                     <button 
-                                        onClick={() => {setImageSrc(null); setBase64ImageData(null); setPrediction(null);}}
+                                        onClick={() => {setImageSrc(null); setBase64ImageData(null); setPrediction(null); setDynamicLinks(null);}}
                                         className="absolute top-2 right-2 bg-red-500 text-white w-8 h-8 rounded-full flex items-center justify-center hover:bg-red-600 transition-colors"
                                     >
                                         ×
@@ -435,7 +526,7 @@ const AnalyzeTool = ({ onAnalysisComplete, user, setTempAnalysis }) => {
 
                         {/* Action Buttons */}
                         <div className="flex flex-col sm:flex-row gap-4 justify-center">
-                            <label htmlFor="upload-input" className="cursor-pointer bg-gradient-to-r from-blue-600 to-indigo-600 hover:from-blue-700 hover:to-indigo-700 text-white font-semibold py-4 px-8 rounded-xl transition-all shadow-lg shadow-blue-500/25 flex items-center justify-center space-x-3">
+                            <label htmlFor="upload-input" className="cursor-pointer bg-gradient-to-r from-teal-500 to-cyan-500 hover:from-teal-600 hover:to-cyan-600 text-white font-semibold py-4 px-8 rounded-xl transition-all shadow-lg shadow-teal-500/25 flex items-center justify-center space-x-3">
                                 <Icon className="w-5 h-5">{ICONS.upload}</Icon>
                                 <span>Select Image</span>
                             </label>
@@ -443,7 +534,7 @@ const AnalyzeTool = ({ onAnalysisComplete, user, setTempAnalysis }) => {
                             
                             <button 
                                 onClick={() => setIsWebcamOpen(true)} 
-                                className="bg-white border-2 border-gray-300 hover:border-blue-400 text-gray-700 font-semibold py-4 px-8 rounded-xl transition-all flex items-center justify-center space-x-3"
+                                className="bg-white border-2 border-gray-300 hover:border-teal-400 text-gray-700 font-semibold py-4 px-8 rounded-xl transition-all flex items-center justify-center space-x-3"
                             >
                                 <Icon className="w-5 h-5">{ICONS.camera}</Icon>
                                 <span>Use Camera</span>
@@ -452,31 +543,28 @@ const AnalyzeTool = ({ onAnalysisComplete, user, setTempAnalysis }) => {
                             <button 
                                 onClick={handlePrediction} 
                                 disabled={!imageSrc || isLoading} 
-                                className="bg-gradient-to-r from-green-600 to-emerald-600 hover:from-green-700 hover:to-emerald-700 text-white font-semibold py-4 px-8 rounded-xl disabled:bg-gray-400 disabled:cursor-not-allowed transition-all shadow-lg shadow-green-500/25 flex items-center justify-center space-x-3"
+                                className="bg-gradient-to-r from-green-500 to-emerald-500 hover:from-green-600 hover:to-emerald-600 text-white font-semibold py-4 px-8 rounded-xl disabled:bg-gray-400 disabled:cursor-not-allowed transition-all shadow-lg shadow-green-500/25 flex items-center justify-center space-x-3"
                             >
-                                {isLoading ? <LoadingSpinner size="sm" text="" /> : <Icon className="w-5 h-5">{ICONS.analyze}</Icon>}
-                                <span>{isLoading ? "Analyzing..." : "Analyze Image"}</span>
+                                {isLoading ? <LoadingSpinner text="Analyzing..."/> : <Icon className="w-5 h-5">{ICONS.analyze}</Icon>}
+                                {!isLoading && <span>Analyze Image</span>}
                             </button>
                         </div>
                     </div>
 
                     {/* Loading State */}
                     {isLoading && (
-                        <div className="bg-blue-50 border border-blue-200 rounded-2xl p-8 mb-6">
+                        <div className="bg-teal-50/80 backdrop-blur-sm border border-teal-200 rounded-2xl p-8 mb-6">
                             <div className="text-center">
-                                <LoadingSpinner size="lg" text="" />
-                                <h3 className="text-lg font-semibold text-blue-900 mt-4 mb-2">AI Analysis in Progress</h3>
-                                <p className="text-blue-700">Our advanced AI is carefully analyzing your image. This may take a few moments...</p>
-                                <div className="mt-4 bg-blue-100 rounded-full h-2">
-                                    <div className="bg-blue-600 h-2 rounded-full animate-pulse" style={{width: '75%'}}></div>
-                                </div>
+                                <LoadingSpinner text="" />
+                                <h3 className="text-lg font-semibold text-teal-900 mt-4 mb-2">AI Analysis in Progress</h3>
+                                <p className="text-teal-700">Our advanced AI is carefully analyzing your image. This may take a few moments...</p>
                             </div>
                         </div>
                     )}
 
                     {/* Error State */}
                     {error && (
-                        <div className="bg-red-50 border border-red-200 rounded-2xl p-6 mb-6">
+                        <div className="bg-red-50/80 backdrop-blur-sm border border-red-200 rounded-2xl p-6 mb-6">
                             <div className="flex items-center space-x-3">
                                 <Icon className="w-6 h-6 text-red-600">{ICONS.warning}</Icon>
                                 <div>
@@ -489,7 +577,7 @@ const AnalyzeTool = ({ onAnalysisComplete, user, setTempAnalysis }) => {
 
                     {/* Results */}
                     {prediction && (
-                        <div className="bg-gradient-to-br from-gray-50 to-white border border-gray-200 rounded-2xl p-8">
+                        <div className="bg-white/80 backdrop-blur-sm border border-gray-200 rounded-2xl p-8">
                             <div className="flex items-center space-x-3 mb-6">
                                 <div className="w-12 h-12 bg-gradient-to-r from-green-500 to-emerald-500 rounded-full flex items-center justify-center">
                                     <Icon className="w-6 h-6 text-white">{ICONS.shield}</Icon>
@@ -499,10 +587,55 @@ const AnalyzeTool = ({ onAnalysisComplete, user, setTempAnalysis }) => {
                                     <p className="text-gray-600">AI-powered diagnostic assessment</p>
                                 </div>
                             </div>
-                            <div className="bg-white rounded-xl p-6 border border-gray-200">
+                            <div className="bg-white/90 rounded-xl p-6 border border-gray-200">
                                 <pre className="whitespace-pre-wrap text-sm leading-relaxed text-gray-800 font-mono">{prediction}</pre>
                             </div>
-                            <div className="mt-6 p-4 bg-amber-50 border border-amber-200 rounded-xl">
+                            
+                            {dynamicLinks && (
+                                <>
+                                    <div className="mt-8">
+                                        <h3 className="text-2xl font-bold text-gray-900 mb-4 flex items-center"><Icon className="w-6 h-6 mr-3 text-red-500">{ICONS.hospital}</Icon>Find a Doctor Nearby</h3>
+                                        <div className="bg-amber-50/80 backdrop-blur-sm border-l-4 border-amber-400 p-4 mb-4">
+                                            <p className="text-amber-800">Based on your result, a consultation is recommended. Here are some search links for nearby specialists:</p>
+                                        </div>
+                                        <div className="space-y-4">
+                                            {dynamicLinks.map((link, index) => (
+                                                <div key={index} className="bg-white/90 border border-gray-200 p-4 rounded-lg flex justify-between items-center">
+                                                    <div>
+                                                        <h4 className="font-bold">{link.name}</h4>
+                                                    </div>
+                                                    <a href={link.mapsLink} target="_blank" rel="noopener noreferrer" className="bg-teal-500 text-white px-4 py-2 rounded-lg hover:bg-teal-600 transition-colors">
+                                                        Search Nearby
+                                                    </a>
+                                                </div>
+                                            ))}
+                                        </div>
+                                    </div>
+                                    
+                                    <div className="mt-8">
+                                        <h3 className="text-2xl font-bold text-gray-900 mb-4 flex items-center"><Icon className="w-6 h-6 mr-3 text-green-500">{ICONS.medicine}</Icon>Commonly Recommended Products</h3>
+                                         <div className="bg-white/90 border border-gray-200 p-4 rounded-lg">
+                                            <ul className="list-disc list-inside space-y-2 text-gray-700">
+                                                <li><b>Antiseptic Wound Wash:</b> To gently clean the area (e.g., Betadine, Savlon).</li>
+                                                <li><b>Sterile, Non-Adherent Dressings:</b> To cover the wound without sticking to it.</li>
+                                                <li><b>Diabetic Moisturizing Cream:</b> To apply on surrounding dry skin (not in the wound).</li>
+                                            </ul>
+                                             <div className="mt-4 p-4 bg-red-50/80 backdrop-blur-sm border border-red-200 rounded-xl">
+                                                <div className="flex items-start space-x-3">
+                                                    <Icon className="w-5 h-5 text-red-600 flex-shrink-0 mt-0.5">{ICONS.warning}</Icon>
+                                                    <div>
+                                                        <h4 className="font-semibold text-red-800">CRITICAL WARNING</h4>
+                                                        <p className="text-sm text-red-700 mt-1">This is NOT a prescription. You MUST consult a doctor before using any medication or product.</p>
+                                                    </div>
+                                                </div>
+                                            </div>
+                                        </div>
+                                    </div>
+                                </>
+                            )}
+
+
+                            <div className="mt-6 p-4 bg-amber-50/80 backdrop-blur-sm border border-amber-200 rounded-xl">
                                 <div className="flex items-start space-x-3">
                                     <Icon className="w-5 h-5 text-amber-600 flex-shrink-0 mt-0.5">{ICONS.warning}</Icon>
                                     <div>
@@ -515,7 +648,6 @@ const AnalyzeTool = ({ onAnalysisComplete, user, setTempAnalysis }) => {
                     )}
                 </div>
 
-                {/* Camera Modal */}
                 {isWebcamOpen && (
                     <div className="fixed inset-0 bg-black bg-opacity-75 flex items-center justify-center z-50 p-4">
                         <div className="bg-white rounded-2xl shadow-2xl max-w-2xl w-full">
@@ -531,55 +663,38 @@ const AnalyzeTool = ({ onAnalysisComplete, user, setTempAnalysis }) => {
                                     style={{maxHeight: '400px'}}
                                 />
                                 <div className="flex justify-center space-x-4 mt-6">
-                                    <button 
-                                        onClick={captureFrame} 
-                                        className="bg-gradient-to-r from-green-600 to-emerald-600 hover:from-green-700 hover:to-emerald-700 text-white font-semibold py-3 px-6 rounded-xl transition-all shadow-lg"
-                                    >
-                                        Capture Photo
-                                    </button>
-                                    <button 
-                                        onClick={toggleCamera} 
-                                        className="bg-gray-600 hover:bg-gray-700 text-white font-semibold py-3 px-6 rounded-xl transition-all"
-                                    >
-                                        Switch Camera
-                                    </button>
-                                    <button 
-                                        onClick={stopWebcam} 
-                                        className="bg-red-600 hover:bg-red-700 text-white font-semibold py-3 px-6 rounded-xl transition-all"
-                                    >
-                                        Close
-                                    </button>
+                                    <button onClick={captureFrame} className="bg-gradient-to-r from-green-500 to-emerald-500 text-white font-semibold py-3 px-6 rounded-xl">Capture Photo</button>
+                                    <button onClick={toggleCamera} className="bg-gray-600 text-white font-semibold py-3 px-6 rounded-xl">Switch Camera</button>
+                                    <button onClick={stopWebcam} className="bg-red-600 text-white font-semibold py-3 px-6 rounded-xl">Close</button>
                                 </div>
                             </div>
                         </div>
                     </div>
                 )}
             </div>
-        </div>
+        </PageWrapper>
     );
 };
 
-const HistoryPage = ({ history, clearHistory, setActivePage }) => {
-    const [selectedAnalysis, setSelectedAnalysis] = useState(null);
 
-    const formatDate = (timestamp) => {
-        if (!timestamp) return 'N/A';
-        const date = timestamp.toDate ? timestamp.toDate() : new Date(timestamp);
-        return date.toLocaleDateString('en-US', {
-            month: 'short',
-            day: 'numeric',
-            year: 'numeric',
-            hour: '2-digit',
-            minute: '2-digit'
-        });
-    };
+
+const HistoryPage = ({ history, clearHistory, setActivePage, deleteHistoryItem }) => {
+    const [selectedAnalysis, setSelectedAnalysis] = useState(null);
 
     const getRiskLevel = (prediction) => {
         const text = prediction.toLowerCase();
         if (text.includes('high') || text.includes('severe') || text.includes('warrant a consultation')) return { level: 'High', color: 'red' };
-        if (text.includes('moderate')) return { level: 'Moderate', color: 'yellow' };
+        if (text.includes('moderate')) return { level: 'Moderate', color: 'amber' };
         return { level: 'Low', color: 'green' };
     };
+    
+    const handleDelete = async (e, itemId) => {
+        e.stopPropagation(); // Prevent modal from opening when clicking delete
+        if (window.confirm("Are you sure you want to delete this analysis record?")) {
+            await deleteHistoryItem(itemId);
+        }
+    };
+
 
     return (
         <div className="min-h-screen bg-gray-50">
@@ -604,12 +719,12 @@ const HistoryPage = ({ history, clearHistory, setActivePage }) => {
                         <Icon className="w-20 h-20 text-gray-300 mx-auto mb-6">{ICONS.history}</Icon>
                         <h3 className="text-2xl font-bold text-gray-900 mb-4">No History Found</h3>
                         <p className="text-gray-600 mb-8">Start by analyzing your first foot image to build your health history.</p>
-                        <button onClick={() => setActivePage('analyze')} className="bg-gradient-to-r from-blue-600 to-indigo-600 text-white font-semibold px-8 py-4 rounded-xl hover:from-blue-700 hover:to-indigo-700 transition-all shadow-lg">
+                        <button onClick={() => setActivePage('analyze')} className="bg-gradient-to-r from-teal-500 to-cyan-500 text-white font-semibold px-8 py-4 rounded-xl hover:from-teal-600 hover:to-cyan-600 transition-all shadow-lg">
                             Start First Analysis
                         </button>
                     </div>
                 ) : (
-                    <div className="grid grid-cols-1 lg:grid-cols-2 xl:grid-cols-3 gap-6">
+                    <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-6">
                         {history.map(item => {
                             const risk = getRiskLevel(item.prediction);
                             return (
@@ -618,19 +733,22 @@ const HistoryPage = ({ history, clearHistory, setActivePage }) => {
                                     className="bg-white rounded-2xl shadow-sm border border-gray-200 overflow-hidden hover:shadow-lg transition-all cursor-pointer"
                                     onClick={() => setSelectedAnalysis(item)}
                                 >
-                                    <div className="p-6">
+                                    <div className="p-6 relative">
+                                        <button
+                                            onClick={(e) => handleDelete(e, item.id)}
+                                            className="absolute top-4 right-4 w-8 h-8 bg-red-100 text-red-600 rounded-full hover:bg-red-200 flex items-center justify-center transition-colors z-10"
+                                            title="Delete this entry"
+                                        >
+                                           <Icon className="w-4 h-4">{ICONS.trash}</Icon>
+                                        </button>
                                         <div className="flex items-center justify-between mb-3">
-                                            <span className="text-sm text-gray-500">{formatDate(item.timestamp)}</span>
-                                            <span className={`inline-flex items-center px-3 py-1 rounded-full text-xs font-medium ${
-                                                risk.color === 'red' ? 'bg-red-100 text-red-800' :
-                                                risk.color === 'yellow' ? 'bg-yellow-100 text-yellow-800' :
-                                                'bg-green-100 text-green-800'
-                                            }`}>
+                                            <span className="text-sm text-gray-500">{safeFormatDate(item.timestamp)}</span>
+                                            <span className={`inline-flex items-center px-3 py-1 rounded-full text-xs font-medium bg-${risk.color}-100 text-${risk.color}-800`}>
                                                 {risk.level} Risk
                                             </span>
                                         </div>
-                                        <p className="text-gray-700 text-sm line-clamp-3">{item.prediction.substring(0, 150)}...</p>
-                                        <button className="mt-4 text-blue-600 font-medium hover:text-blue-700 transition-colors text-sm">
+                                        <p className="text-gray-700 text-sm line-clamp-3">{item.prediction}</p>
+                                        <button className="mt-4 text-teal-600 font-medium hover:text-teal-700 transition-colors text-sm">
                                             View Full Analysis →
                                         </button>
                                     </div>
@@ -644,11 +762,11 @@ const HistoryPage = ({ history, clearHistory, setActivePage }) => {
             {/* Analysis Detail Modal */}
             {selectedAnalysis && (
                 <div className="fixed inset-0 bg-black bg-opacity-50 flex items-center justify-center z-50 p-4">
-                    <div className="bg-white rounded-2xl shadow-2xl max-w-4xl w-full max-h-[90vh] overflow-hidden">
+                    <div className="bg-white rounded-2xl shadow-2xl max-w-2xl w-full max-h-[90vh] overflow-hidden">
                         <div className="p-6 border-b border-gray-200 flex justify-between items-center">
                             <div>
                                 <h3 className="text-xl font-bold text-gray-900">Analysis Details</h3>
-                                <p className="text-gray-600">{formatDate(selectedAnalysis.timestamp)}</p>
+                                <p className="text-gray-600">{safeFormatDate(selectedAnalysis.timestamp)}</p>
                             </div>
                             <button 
                                 onClick={() => setSelectedAnalysis(null)}
@@ -668,7 +786,6 @@ const HistoryPage = ({ history, clearHistory, setActivePage }) => {
         </div>
     );
 };
-
 const EducationPage = () => {
     const [activeTab, setActiveTab] = useState('basics');
 
@@ -724,7 +841,7 @@ const EducationPage = () => {
                                 onClick={() => setActiveTab(tab.id)}
                                 className={`flex items-center space-x-2 px-6 py-3 rounded-xl transition-all font-medium ${
                                     activeTab === tab.id
-                                        ? 'bg-gradient-to-r from-blue-600 to-indigo-600 text-white shadow-lg'
+                                        ? 'bg-gradient-to-r from-teal-500 to-cyan-500 text-white shadow-lg'
                                         : 'text-gray-600 hover:bg-gray-50'
                                 }`}
                             >
@@ -757,19 +874,31 @@ const EducationPage = () => {
 };
 
 const ProfilePage = ({ user, profile, setProfile }) => {
-    const [formData, setFormData] = useState({ 
-        name: '', age: '', diabetesType: 'Type 2', diagnosisYear: '', 
-        medications: '', allergies: '', emergencyContact: '', emergencyPhone: ''
+    const [formData, setFormData] = useState({
+        name: '',
+        gender: 'Prefer not to say',
+        dob: '',
+        contactNumber: '',
+        address: '',
+        diabetesType: 'Type 2',
+        diagnosisYear: '',
+        emergencyContact: '',
+        emergencyPhone: ''
     });
     const [isSaving, setIsSaving] = useState(false);
 
     useEffect(() => {
         if (profile) {
             setFormData({
-                name: profile.name || '', age: profile.age || '',
-                diabetesType: profile.diabetesType || 'Type 2', diagnosisYear: profile.diagnosisYear || '',
-                medications: profile.medications || '', allergies: profile.allergies || '',
-                emergencyContact: profile.emergencyContact || '', emergencyPhone: profile.emergencyPhone || ''
+                name: profile.name || '',
+                gender: profile.gender || 'Prefer not to say',
+                dob: profile.dob || '',
+                contactNumber: profile.contactNumber || '',
+                address: profile.address || '',
+                diabetesType: profile.diabetesType || 'Type 2',
+                diagnosisYear: profile.diagnosisYear || '',
+                emergencyContact: profile.emergencyContact || '',
+                emergencyPhone: profile.emergencyPhone || ''
             });
         }
     }, [profile]);
@@ -793,11 +922,6 @@ const ProfilePage = ({ user, profile, setProfile }) => {
             setTimeout(() => document.body.removeChild(successDiv), 3000);
         } catch (error) {
             console.error("Error saving profile:", error);
-            const errorDiv = document.createElement('div');
-            errorDiv.className = 'fixed top-4 right-4 bg-red-500 text-white px-6 py-3 rounded-xl shadow-lg z-50';
-            errorDiv.textContent = 'Failed to save profile. Please try again.';
-            document.body.appendChild(errorDiv);
-            setTimeout(() => document.body.removeChild(errorDiv), 3000);
         } finally {
             setIsSaving(false);
         }
@@ -809,59 +933,305 @@ const ProfilePage = ({ user, profile, setProfile }) => {
                 title="Your Health Profile"
                 subtitle="Manage your personal information and health details"
             />
-
             <div className="max-w-4xl mx-auto p-6">
                 <div className="bg-white rounded-2xl shadow-sm border border-gray-200 p-8">
-                    <div className="grid grid-cols-1 lg:grid-cols-2 gap-8">
-                        <div>
-                            <h3 className="text-xl font-bold text-gray-900 mb-6">Personal Information</h3>
+                    <form onSubmit={(e) => { e.preventDefault(); handleSave(); }}>
+                        <div className="grid grid-cols-1 md:grid-cols-2 gap-8">
+                            {/* Personal Information Column */}
                             <div className="space-y-6">
+                                <h3 className="text-xl font-bold text-gray-900">Personal Information</h3>
                                 <div>
                                     <label htmlFor="name" className="block text-sm font-semibold text-gray-700 mb-2">Full Name</label>
-                                    <input type="text" name="name" id="name" value={formData.name} onChange={handleChange} className="w-full rounded-xl border border-gray-300 px-4 py-3 focus:ring-2 focus:ring-blue-500 focus:border-transparent transition-all" placeholder="Enter your full name" />
+                                    <input type="text" name="name" id="name" value={formData.name} onChange={handleChange} className="w-full rounded-xl border border-gray-300 px-4 py-3" placeholder="First + Last name" />
                                 </div>
                                 <div>
-                                    <label htmlFor="age" className="block text-sm font-semibold text-gray-700 mb-2">Age</label>
-                                    <input type="number" name="age" id="age" value={formData.age} onChange={handleChange} className="w-full rounded-xl border border-gray-300 px-4 py-3 focus:ring-2 focus:ring-blue-500 focus:border-transparent transition-all" placeholder="Enter your age" min="1" max="120" />
+                                    <label htmlFor="gender" className="block text-sm font-semibold text-gray-700 mb-2">Gender</label>
+                                    <select name="gender" id="gender" value={formData.gender} onChange={handleChange} className="w-full rounded-xl border border-gray-300 px-4 py-3">
+                                        <option>Male</option>
+                                        <option>Female</option>
+                                        <option>Other</option>
+                                        <option>Prefer not to say</option>
+                                    </select>
+                                </div>
+                                <div>
+                                    <label htmlFor="dob" className="block text-sm font-semibold text-gray-700 mb-2">Date of Birth</label>
+                                    <input type="date" name="dob" id="dob" value={formData.dob} onChange={handleChange} className="w-full rounded-xl border border-gray-300 px-4 py-3" />
+                                </div>
+                                <div>
+                                    <label htmlFor="email" className="block text-sm font-semibold text-gray-700 mb-2">Email</label>
+                                    <input type="email" name="email" id="email" value={user.email} readOnly disabled className="w-full rounded-xl border border-gray-300 px-4 py-3 bg-gray-100 cursor-not-allowed" />
+                                </div>
+                                 <div>
+                                    <label htmlFor="contactNumber" className="block text-sm font-semibold text-gray-700 mb-2">Contact Number</label>
+                                    <input type="tel" name="contactNumber" id="contactNumber" value={formData.contactNumber} onChange={handleChange} className="w-full rounded-xl border border-gray-300 px-4 py-3" placeholder="Your phone number" />
+                                </div>
+                                <div>
+                                    <label htmlFor="address" className="block text-sm font-semibold text-gray-700 mb-2">Address</label>
+                                    <textarea name="address" id="address" value={formData.address} onChange={handleChange} rows="3" className="w-full rounded-xl border border-gray-300 px-4 py-3" placeholder="Your home address"></textarea>
                                 </div>
                             </div>
-                        </div>
-
-                        <div>
-                            <h3 className="text-xl font-bold text-gray-900 mb-6">Medical Information</h3>
-                            <div className="space-y-6">
+                            {/* Medical & Emergency Column */}
+                             <div className="space-y-6">
+                                <h3 className="text-xl font-bold text-gray-900">Medical & Emergency</h3>
                                 <div>
                                     <label htmlFor="diabetesType" className="block text-sm font-semibold text-gray-700 mb-2">Type of Diabetes</label>
-                                    <select id="diabetesType" name="diabetesType" value={formData.diabetesType} onChange={handleChange} className="w-full rounded-xl border border-gray-300 px-4 py-3 focus:ring-2 focus:ring-blue-500 focus:border-transparent transition-all">
+                                    <select id="diabetesType" name="diabetesType" value={formData.diabetesType} onChange={handleChange} className="w-full rounded-xl border border-gray-300 px-4 py-3">
                                         <option>Type 1</option> <option>Type 2</option> <option>Gestational</option> <option>Pre-diabetes</option> <option>Other</option>
                                     </select>
                                 </div>
                                 <div>
                                     <label htmlFor="diagnosisYear" className="block text-sm font-semibold text-gray-700 mb-2">Year of Diagnosis</label>
-                                    <input type="number" name="diagnosisYear" id="diagnosisYear" value={formData.diagnosisYear} onChange={handleChange} className="w-full rounded-xl border border-gray-300 px-4 py-3 focus:ring-2 focus:ring-blue-500 focus:border-transparent transition-all" placeholder="e.g., 2020" min="1950" max={new Date().getFullYear()} />
+                                    <input type="number" name="diagnosisYear" id="diagnosisYear" value={formData.diagnosisYear} onChange={handleChange} className="w-full rounded-xl border border-gray-300 px-4 py-3" placeholder="e.g., 2020" min="1950" max={new Date().getFullYear()} />
+                                </div>
+                                <div>
+                                    <label htmlFor="emergencyContact" className="block text-sm font-semibold text-gray-700 mb-2">Emergency Contact Name</label>
+                                    <input type="text" name="emergencyContact" id="emergencyContact" value={formData.emergencyContact} onChange={handleChange} className="w-full rounded-xl border border-gray-300 px-4 py-3" placeholder="Name of emergency contact" />
+                                </div>
+                                <div>
+                                    <label htmlFor="emergencyPhone" className="block text-sm font-semibold text-gray-700 mb-2">Emergency Contact Number</label>
+                                    <input type="tel" name="emergencyPhone" id="emergencyPhone" value={formData.emergencyPhone} onChange={handleChange} className="w-full rounded-xl border border-gray-300 px-4 py-3" placeholder="Phone of emergency contact" />
                                 </div>
                             </div>
                         </div>
-                    </div>
-                    <div className="mt-8 border-t border-gray-200 pt-8">
-                        <button onClick={handleSave} disabled={isSaving} className="w-full bg-gradient-to-r from-blue-600 to-indigo-600 text-white font-semibold py-4 px-8 rounded-xl disabled:bg-gray-400 transition-all shadow-lg shadow-blue-500/25">
-                            {isSaving ? 'Saving...' : 'Save Profile'}
-                        </button>
-                    </div>
+
+                        <div className="mt-8 border-t border-gray-200 pt-8">
+                            <button type="submit" disabled={isSaving} className="w-full bg-gradient-to-r from-teal-500 to-cyan-500 text-white font-semibold py-4 px-8 rounded-xl disabled:bg-gray-400">
+                                {isSaving ? 'Saving...' : 'Save Profile'}
+                            </button>
+                        </div>
+                    </form>
                 </div>
             </div>
         </div>
     );
 };
 
+const HealthLogPage = ({ user, healthLog, setHealthLog, appointment, setAppointment, deleteAppointment }) => {
+    const [logType, setLogType] = useState('symptom'); // symptom, sugar
+    
+    // Symptom state
+    const [painLevel, setPainLevel] = useState(0);
+    const [swelling, setSwelling] = useState(false);
+    const [redness, setRedness] = useState(false);
+    const [notes, setNotes] = useState('');
 
-// --- Authentication Components ---
+    // Blood sugar state
+    const [sugarLevel, setSugarLevel] = useState('');
+
+    // Appointment state
+    const [appointmentDate, setAppointmentDate] = useState(appointment ? appointment.date : '');
+    const [appointmentTime, setAppointmentTime] = useState(appointment ? appointment.time : '');
+    
+    const [isAppointmentPast, setIsAppointmentPast] = useState(false);
+
+    // Sync local state with prop and check if it's past
+    useEffect(() => {
+        if (appointment) {
+            setAppointmentDate(appointment.date || '');
+            setAppointmentTime(appointment.time || '');
+            const appointmentDateTime = new Date(`${appointment.date}T${appointment.time}`);
+            setIsAppointmentPast(appointmentDateTime < new Date());
+        } else {
+            setIsAppointmentPast(false);
+        }
+    }, [appointment]);
+
+    const handleSaveLog = async () => {
+        if (!user) return;
+        
+        let newLogEntry = {
+            type: logType,
+            timestamp: Timestamp.now(),
+        };
+
+        if (logType === 'symptom') {
+            newLogEntry = { ...newLogEntry, painLevel, swelling, redness, notes };
+        } else if (logType === 'sugar') {
+            if (!sugarLevel) { alert("Please enter a blood sugar value."); return; }
+            newLogEntry = { ...newLogEntry, sugarLevel: Number(sugarLevel) };
+        }
+
+        try {
+            const docRef = await addDoc(collection(db, `users/${user.uid}/healthLog`), newLogEntry);
+            setHealthLog(prev => [{ id: docRef.id, ...newLogEntry }, ...prev]);
+            // Reset forms
+            setPainLevel(0); setSwelling(false); setRedness(false); setNotes(''); setSugarLevel('');
+        } catch (error) {
+            console.error("Error saving health log:", error);
+        }
+    };
+    
+    const handleSaveAppointment = async () => {
+        if (!user || !appointmentDate || !appointmentTime) return;
+        const newAppointment = { date: appointmentDate, time: appointmentTime };
+        try {
+            await setDoc(doc(db, `users/${user.uid}/appointment`, 'data'), newAppointment);
+            setAppointment(newAppointment);
+        } catch (error) {
+             console.error("Error saving appointment:", error);
+        }
+    };
+    
+    const handleDeleteAppointment = async () => {
+        if (window.confirm("Are you sure you want to delete this appointment reminder?")) {
+            await deleteAppointment();
+            setAppointmentDate('');
+            setAppointmentTime('');
+        }
+    };
+
+     const handleAddToCalendar = () => {
+        if (!appointment || !appointment.date || !appointment.time) {
+            alert("Please set an appointment first.");
+            return;
+        }
+
+        const [year, month, day] = appointment.date.split('-');
+        const [hours, minutes] = appointment.time.split(':');
+
+        const startTime = new Date(year, month - 1, day, hours, minutes);
+        const endTime = new Date(startTime.getTime() + 60 * 60 * 1000); // Add 1 hour
+
+        const toUTCString = (date) => date.toISOString().replace(/[-:]|\.\d{3}/g, '');
+
+        const event = {
+            title: "Doctor's Appointment (DFU Check-up)",
+            details: "Reminder for my scheduled foot health check-up, generated by DFU Analyzer.",
+            start: toUTCString(startTime),
+            end: toUTCString(endTime)
+        };
+        
+        const url = `https://www.google.com/calendar/render?action=TEMPLATE&text=${encodeURIComponent(event.title)}&dates=${event.start}/${event.end}&details=${encodeURIComponent(event.details)}`;
+        
+        window.open(url, '_blank');
+    };
+    
+    return (
+        <div className="min-h-screen bg-gray-50">
+            <Header 
+                title="Health Log & Reminders"
+                subtitle="Track your symptoms, blood sugar, and appointments"
+            />
+            <div className="max-w-7xl mx-auto p-6">
+                <div className="grid grid-cols-1 lg:grid-cols-3 gap-8">
+                    {/* Log Entry Section */}
+                    <div className="lg:col-span-2 bg-white rounded-2xl shadow-sm border border-gray-200 p-8">
+                        <div className="mb-6 border-b border-gray-200 pb-4">
+                            <h3 className="text-2xl font-bold text-gray-900">New Log Entry</h3>
+                            <div className="mt-4 flex space-x-2">
+                               <button onClick={() => setLogType('symptom')} className={`px-4 py-2 rounded-lg font-medium ${logType === 'symptom' ? 'bg-teal-500 text-white' : 'bg-gray-200 text-gray-700'}`}>Symptom Log</button>
+                               <button onClick={() => setLogType('sugar')} className={`px-4 py-2 rounded-lg font-medium ${logType === 'sugar' ? 'bg-teal-500 text-white' : 'bg-gray-200 text-gray-700'}`}>Blood Sugar</button>
+                           </div>
+                        </div>
+
+                        {/* Symptom Form */}
+                        {logType === 'symptom' && (
+                            <div className="space-y-6">
+                                <div>
+                                    <label className="block text-sm font-semibold text-gray-700">Pain Level: {painLevel}</label>
+                                    <input type="range" min="0" max="10" value={painLevel} onChange={(e) => setPainLevel(e.target.value)} className="w-full" />
+                                </div>
+                                <div className="flex items-center space-x-4">
+                                    <label className="flex items-center">
+                                        <input type="checkbox" checked={swelling} onChange={(e) => setSwelling(e.target.checked)} className="h-4 w-4 rounded border-gray-300 text-teal-600 focus:ring-teal-500"/>
+                                        <span className="ml-2 text-gray-700">Swelling Present</span>
+                                    </label>
+                                    <label className="flex items-center">
+                                        <input type="checkbox" checked={redness} onChange={(e) => setRedness(e.target.checked)} className="h-4 w-4 rounded border-gray-300 text-teal-600 focus:ring-teal-500"/>
+                                        <span className="ml-2 text-gray-700">Redness Present</span>
+                                    </label>
+                                </div>
+                                <div>
+                                    <label className="block text-sm font-semibold text-gray-700">Notes</label>
+                                    <textarea value={notes} onChange={(e) => setNotes(e.target.value)} rows="3" className="w-full mt-1 rounded-xl border border-gray-300 p-2 focus:ring-teal-500 focus:border-teal-500"></textarea>
+                                </div>
+                            </div>
+                        )}
+
+                        {/* Blood Sugar Form */}
+                        {logType === 'sugar' && (
+                            <div>
+                                <label className="block text-sm font-semibold text-gray-700">Blood Sugar Level (mg/dL)</label>
+                                <input type="number" value={sugarLevel} onChange={(e) => setSugarLevel(e.target.value)} className="w-full mt-1 rounded-xl border border-gray-300 p-2 focus:ring-teal-500 focus:border-teal-500" placeholder="e.g., 120" />
+                            </div>
+                        )}
+                        
+                        <button onClick={handleSaveLog} className="w-full mt-6 bg-gradient-to-r from-teal-500 to-cyan-500 text-white font-semibold py-3 rounded-xl">Save Log Entry</button>
+                    </div>
+
+                    {/* Side Panel for Appointments and Log History */}
+                    <div className="space-y-8">
+                        <div className="bg-white rounded-2xl shadow-sm border border-gray-200 p-8">
+                             <h3 className="text-2xl font-bold text-gray-900 mb-6">Appointment Reminder</h3>
+                             
+                              {appointment && !isAppointmentPast && (
+                                <div className="mb-4 p-3 bg-green-50 rounded-lg border border-green-200">
+                                    <p className="font-semibold text-green-800">Next Appointment:</p>
+                                    <p className="text-green-700">{new Date(appointment.date).toLocaleDateString()} at {appointment.time}</p>
+                                </div>
+                             )}
+
+                             {isAppointmentPast && (
+                                <div className="mb-4 p-3 bg-red-50 rounded-lg border border-red-200">
+                                    <p className="font-semibold text-red-800">Appointment Passed</p>
+                                    <p className="text-red-700">Your appointment on {new Date(appointment.date).toLocaleDateString()} is over. Please schedule a new one.</p>
+                                </div>
+                             )}
+
+                             <div className="space-y-4">
+                                <div>
+                                    <label className="block text-sm font-semibold text-gray-700">Date</label>
+                                    <input type="date" value={appointmentDate} onChange={(e) => setAppointmentDate(e.target.value)} className="w-full mt-1 rounded-xl border border-gray-300 p-2"/>
+                                </div>
+                                 <div>
+                                    <label className="block text-sm font-semibold text-gray-700">Time</label>
+                                    <input type="time" value={appointmentTime} onChange={(e) => setAppointmentTime(e.target.value)} className="w-full mt-1 rounded-xl border border-gray-300 p-2"/>
+                                </div>
+                                <div className="flex space-x-2">
+                                     <button onClick={handleSaveAppointment} className="flex-1 mt-4 bg-amber-500 text-white font-semibold py-3 rounded-xl">Set/Update</button>
+                                     {appointment && (
+                                        <button onClick={handleDeleteAppointment} className="flex-1 mt-4 bg-red-500 text-white font-semibold py-3 rounded-xl">Delete</button>
+                                     )}
+                                </div>
+                                {appointment && !isAppointmentPast && (
+                                     <button 
+                                        onClick={handleAddToCalendar} 
+                                        className="w-full mt-2 bg-blue-500 text-white font-semibold py-3 rounded-xl flex items-center justify-center space-x-2"
+                                     >
+                                        <Icon className="w-5 h-5">{ICONS.calendar}</Icon>
+                                        <span>Add to Google Calendar</span>
+                                     </button>
+                                )}
+                             </div>
+                        </div>
+                         <div className="bg-white rounded-2xl shadow-sm border border-gray-200 p-8">
+                             <h3 className="text-2xl font-bold text-gray-900 mb-6">Recent Logs</h3>
+                             <div className="space-y-4 max-h-96 overflow-y-auto">
+                                {healthLog.slice(0, 5).map(log => {
+                                    return (
+                                        <div key={log.id} className="p-3 bg-gray-50 rounded-lg">
+                                            <p className="font-semibold">{log.type === 'symptom' ? 'Symptom Log' : 'Blood Sugar'}</p>
+                                            <p className="text-sm text-gray-600">{safeFormatDate(log.timestamp)}</p>
+                                            {log.type === 'sugar' && <p>Level: {log.sugarLevel} mg/dL</p>}
+                                        </div>
+                                    )
+                                })}
+                             </div>
+                         </div>
+                    </div>
+
+                </div>
+            </div>
+        </div>
+    );
+};
 const AuthPage = ({ setTempAnalysis }) => {
     const [isLogin, setIsLogin] = useState(true);
     const [email, setEmail] = useState('');
     const [password, setPassword] = useState('');
     const [error, setError] = useState('');
     const [isLoading, setIsLoading] = useState(false);
+    const [rememberMe, setRememberMe] = useState(true);
 
     const handleAuthAction = async (e) => {
         e.preventDefault();
@@ -869,6 +1239,8 @@ const AuthPage = ({ setTempAnalysis }) => {
         setError('');
         try {
             if (isLogin) {
+                const persistence = rememberMe ? browserLocalPersistence : browserSessionPersistence;
+                await setPersistence(auth, persistence);
                 await signInWithEmailAndPassword(auth, email, password);
             } else {
                 await createUserWithEmailAndPassword(auth, email, password);
@@ -889,22 +1261,47 @@ const AuthPage = ({ setTempAnalysis }) => {
     };
 
     return (
-        <div className="flex items-center justify-center min-h-screen bg-gray-50">
-            <div className="w-full max-w-md p-8 space-y-8 bg-white shadow-lg rounded-2xl">
-                <div>
-                    <h2 className="text-3xl font-bold text-center text-gray-900">{isLogin ? 'Sign In' : 'Create Account'}</h2>
-                    <p className="mt-2 text-center text-sm text-gray-600">
+        <div className="flex items-center justify-center min-h-screen bg-gradient-to-br from-gray-100 to-cyan-50">
+            <video 
+                autoPlay 
+                loop 
+                muted 
+                playsInline
+                className="absolute z-0 w-auto min-w-full min-h-full max-w-none"
+            >
+                {/* The video source points to the file in your 'public' folder */}
+                <source src="/Medical_Tech_Background_Video_Generation.mp4" type="video/mp4" />
+                Your browser does not support the video tag.
+            </video>
+            <div className="w-full max-w-md p-8 space-y-8 bg-white/90 backdrop-blur-sm shadow-2xl rounded-2xl">
+                <div className="flex flex-col items-center text-center">
+                    <div className="flex items-center space-x-3">
+                         <img src="/logo3.png" className="w-16 h-auto" alt="DFU Logo"/>
+                         <h1 className="text-3xl font-bold text-gray-900">DFU Analyzer</h1>
+                    </div>
+                    <h2 className="mt-6 text-3xl font-bold text-gray-900">{isLogin ? 'Sign In' : 'Create Account'}</h2>
+                    <p className="mt-2 text-sm text-gray-600">
                         Or{' '}
-                        <button onClick={() => setIsLogin(!isLogin)} className="font-medium text-blue-600 hover:text-blue-500">
+                        <button onClick={() => setIsLogin(!isLogin)} className="font-medium text-teal-600 hover:text-teal-500">
                             {isLogin ? 'create a new account' : 'sign in to your account'}
                         </button>
                     </p>
                 </div>
                 <form className="mt-8 space-y-6" onSubmit={handleAuthAction}>
-                    <input type="email" value={email} onChange={(e) => setEmail(e.target.value)} placeholder="Email address" required className="w-full px-4 py-3 border border-gray-300 rounded-xl focus:ring-blue-500 focus:border-blue-500" />
-                    <input type="password" value={password} onChange={(e) => setPassword(e.target.value)} placeholder="Password" required className="w-full px-4 py-3 border border-gray-300 rounded-xl focus:ring-blue-500 focus:border-blue-500" />
+                    <input type="email" value={email} onChange={(e) => setEmail(e.target.value)} placeholder="Email address" required className="w-full px-4 py-3 border border-gray-300 rounded-xl focus:ring-teal-500 focus:border-teal-500" />
+                    <input type="password" value={password} onChange={(e) => setPassword(e.target.value)} placeholder="Password" required className="w-full px-4 py-3 border border-gray-300 rounded-xl focus:ring-teal-500 focus:border-teal-500" />
+                    
+                    {isLogin && (
+                        <div className="flex items-center justify-between">
+                            <div className="flex items-center">
+                                <input id="remember-me" name="remember-me" type="checkbox" checked={rememberMe} onChange={(e) => setRememberMe(e.target.checked)} className="h-4 w-4 text-teal-600 focus:ring-teal-500 border-gray-300 rounded" />
+                                <label htmlFor="remember-me" className="ml-2 block text-sm text-gray-900">Remember me</label>
+                            </div>
+                        </div>
+                    )}
+
                     {error && <p className="text-sm text-red-600">{error}</p>}
-                    <button type="submit" disabled={isLoading} className="w-full py-3 px-4 text-white bg-blue-600 rounded-xl hover:bg-blue-700 focus:outline-none focus:ring-2 focus:ring-offset-2 focus:ring-blue-500 disabled:bg-gray-400">
+                    <button type="submit" disabled={isLoading} className="w-full py-3 px-4 text-white bg-teal-600 rounded-xl hover:bg-teal-700 focus:outline-none focus:ring-2 focus:ring-offset-2 focus:ring-teal-500 disabled:bg-gray-400">
                         {isLoading ? <LoadingSpinner /> : (isLogin ? 'Sign In' : 'Sign Up')}
                     </button>
                 </form>
@@ -925,18 +1322,51 @@ export default function App() {
     const [activePage, setActivePage] = useState('dashboard');
     const [profile, setProfile] = useState(null);
     const [history, setHistory] = useState([]);
-    const [tempAnalysis, setTempAnalysis] = useState(null); // For guest analysis
+    const [tempAnalysis, setTempAnalysis] = useState(null);
+    const [healthLog, setHealthLog] = useState([]);
+    const [appointment, setAppointment] = useState(null);
+    const inactivityTimer = useRef(null);
 
-    const addAnalysisToHistory = useCallback(async (predictionText, targetUser = user) => {
-        const newHistoryItem = { prediction: predictionText, timestamp: new Date() };
+
+    const handleSignOut = useCallback(async () => {
+        await signOut(auth);
+    }, []);
+
+    const resetInactivityTimer = useCallback(() => {
+        clearTimeout(inactivityTimer.current);
+        inactivityTimer.current = setTimeout(() => {
+            if (user && !user.isAnonymous) {
+                alert("You have been logged out due to inactivity.");
+                handleSignOut();
+            }
+        }, 15 * 60 * 1000); // 15 minutes
+    }, [user, handleSignOut]);
+
+    useEffect(() => {
+        if (user) {
+            const events = ['mousedown', 'mousemove', 'keypress', 'scroll', 'touchstart'];
+            events.forEach(event => window.addEventListener(event, resetInactivityTimer));
+            resetInactivityTimer(); // Start the timer on login
+
+            return () => {
+                events.forEach(event => window.removeEventListener(event, resetInactivityTimer));
+                clearTimeout(inactivityTimer.current);
+            };
+        }
+    }, [user, resetInactivityTimer]);
+
+    const addAnalysisToHistory = useCallback(async (predictionText, targetUser) => {
+        const currentTargetUser = targetUser || user;
+        const newHistoryItem = { prediction: predictionText, timestamp: Timestamp.now() };
         
-        if (targetUser && !targetUser.isAnonymous) {
-            const docRef = await addDoc(collection(db, `users/${targetUser.uid}/history`), newHistoryItem);
+        if (currentTargetUser && !currentTargetUser.isAnonymous) {
+            const docRef = await addDoc(collection(db, `users/${currentTargetUser.uid}/history`), newHistoryItem);
             setHistory(prev => [{ id: docRef.id, ...newHistoryItem }, ...prev]);
         } else {
-            // It's a guest, store it temporarily
             setTempAnalysis(newHistoryItem);
-            alert("Create an account to save this analysis and view your history!");
+            if(!currentTargetUser || currentTargetUser.isAnonymous) {
+                alert("Create an account to save this analysis and view your history!");
+            }
         }
     }, [user]);
 
@@ -944,8 +1374,8 @@ export default function App() {
         const unsubscribe = onAuthStateChanged(auth, async (currentUser) => {
             setUser(currentUser);
             if (currentUser && !currentUser.isAnonymous) {
-                // Fetch data for logged-in users
                 const userDocRef = doc(db, `users/${currentUser.uid}`);
+                
                 const profileRef = doc(userDocRef, 'profile', 'data');
                 const profileSnap = await getDoc(profileRef);
                 if (profileSnap.exists()) setProfile(profileSnap.data());
@@ -953,25 +1383,34 @@ export default function App() {
                 const historyQuery = query(collection(userDocRef, 'history'), orderBy('timestamp', 'desc'));
                 const historySnap = await getDocs(historyQuery);
                 setHistory(historySnap.docs.map(d => ({ id: d.id, ...d.data() })));
+                
+                const logQuery = query(collection(userDocRef, 'healthLog'), orderBy('timestamp', 'desc'));
+                const logSnap = await getDocs(logQuery);
+                setHealthLog(logSnap.docs.map(d => ({ id: d.id, ...d.data() })));
+                
+                const apptRef = doc(userDocRef, 'appointment', 'data');
+                const apptSnap = await getDoc(apptRef);
+                if (apptSnap.exists()) {
+                    setAppointment(apptSnap.data());
+                } else {
+                    setAppointment(null);
+                }
 
-                // If there's a temporary analysis, save it now
                 if (tempAnalysis) {
                     await addAnalysisToHistory(tempAnalysis.prediction, currentUser);
-                    setTempAnalysis(null); // Clear it after saving
+                    setTempAnalysis(null);
                 }
             } else {
                 setProfile(null);
                 setHistory([]);
+                setHealthLog([]);
+                setAppointment(null);
             }
             setIsLoading(false);
         });
         return () => unsubscribe();
     }, [tempAnalysis, addAnalysisToHistory]);
 
-    const handleSignOut = async () => {
-        await signOut(auth);
-    };
-    
     const clearHistory = async () => {
         if (!user || user.isAnonymous) return;
         const historyCollectionRef = collection(db, `users/${user.uid}/history`);
@@ -980,6 +1419,27 @@ export default function App() {
         await Promise.all(deletePromises);
         setHistory([]);
     };
+    
+    const deleteHistoryItem = async (itemId) => {
+        if (!user || user.isAnonymous) return;
+        try {
+            await deleteDoc(doc(db, `users/${user.uid}/history`, itemId));
+            setHistory(prev => prev.filter(item => item.id !== itemId));
+        } catch (error) {
+            console.error("Error deleting history item:", error);
+        }
+    };
+
+    const deleteAppointment = async () => {
+        if (!user || user.isAnonymous) return;
+        try {
+            const appointmentRef = doc(db, `users/${user.uid}/appointment`, 'data');
+            await deleteDoc(appointmentRef);
+            setAppointment(null);
+        } catch (error) {
+            console.error("Error deleting appointment:", error);
+        }
+    };
 
     if (isLoading) return <div className="flex items-center justify-center h-screen"><LoadingSpinner text="Loading Application..." /></div>;
     
@@ -987,21 +1447,35 @@ export default function App() {
 
     const renderPage = () => {
         switch (activePage) {
-            case 'dashboard': return <Dashboard setActivePage={setActivePage} history={history} profile={profile} />;
-            case 'analyze': return <AnalyzeTool onAnalysisComplete={addAnalysisToHistory} user={user} setTempAnalysis={setTempAnalysis} />;
-            case 'history': return <HistoryPage history={history} clearHistory={clearHistory} setActivePage={setActivePage}/>;
+            case 'dashboard': return <Dashboard setActivePage={setActivePage} history={history} profile={profile} healthLog={healthLog} appointment={appointment} />;
+            case 'analyze': return <AnalyzeTool onAnalysisComplete={addAnalysisToHistory} />;
+            case 'history': return <HistoryPage history={history} clearHistory={clearHistory} setActivePage={setActivePage} deleteHistoryItem={deleteHistoryItem} />;
+            case 'healthLog': return <HealthLogPage user={user} healthLog={healthLog} setHealthLog={setHealthLog} appointment={appointment} setAppointment={setAppointment} deleteAppointment={deleteAppointment} />;
             case 'education': return <EducationPage />;
             case 'profile': return <ProfilePage user={user} profile={profile} setProfile={setProfile} />;
-            default: return <Dashboard setActivePage={setActivePage} history={history} profile={profile} />;
+            default: return <Dashboard setActivePage={setActivePage} history={history} profile={profile} healthLog={healthLog} appointment={appointment} />;
         }
     };
 
     return (
-        <div className="flex h-screen bg-gray-50 text-gray-900 font-sans">
-            <Sidebar activePage={activePage} setActivePage={setActivePage} handleSignOut={handleSignOut} />
-            <main className="flex-1 overflow-y-auto">
-                {renderPage()}
-            </main>
+        <div className="relative flex h-screen bg-gray-50 text-gray-900 font-sans">
+             <video
+                className="absolute top-0 left-0 w-full h-full object-cover z-0"
+                autoPlay
+                muted
+                loop
+                playsInline
+            >
+                <source src="/Medical_Tech_Background_Video_Generation.mp4" type="video/mp4" />
+            </video>
+            <div className="absolute top-0 left-0 w-full h-full bg-black/10 z-10"></div>
+            
+            <div className="relative z-20 flex w-full">
+                <Sidebar activePage={activePage} setActivePage={setActivePage} handleSignOut={handleSignOut} />
+                <main className="flex-1 overflow-y-auto">
+                    {renderPage()}
+                </main>
+            </div>
         </div>
     );
 }
