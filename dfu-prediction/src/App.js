@@ -464,7 +464,7 @@ const AnalyzeTool = ({ onAnalysisComplete, onMenuClick }) => {
                 ]
             };
             
-            const apiKey = ""; // Will be replaced by environment
+            const apiKey =process.env.REACT_APP_GOOGLE_API_KEY; // Will be replaced by environment
             const apiUrl = `https://generativelanguage.googleapis.com/v1beta/models/gemini-2.0-flash:generateContent?key=${apiKey}`;
 
             const response = await fetch(apiUrl, {
