@@ -14,7 +14,7 @@ import {
     signInWithCustomToken
 } from 'firebase/auth';
 import { getFirestore, doc, setDoc, getDoc, collection, addDoc, getDocs, query, orderBy, deleteDoc, Timestamp } from 'firebase/firestore';
-
+import logoVideo from './assets/logo4.mp4';
 // --- Firebase Configuration ---
 const firebaseConfig = typeof __firebase_config !== 'undefined' ? JSON.parse(__firebase_config) : {
     // Fallback for local development
@@ -116,11 +116,15 @@ const Sidebar = ({ activePage, setActivePage, handleSignOut }) => {
         <aside className="w-72 bg-white flex flex-col h-full">
             <div className="p-6 border-b border-gray-200">
                 <div className="flex items-center space-x-3">
-                    <img
-                        src="logo3.png"
-                        alt="DFU Logo"
-                        className="w-[50px] h-[80px] p-2.5 rounded-lg"
-                    />
+                 <video
+    src={logoVideo}
+    autoPlay
+    loop
+    muted
+    playsInline
+    className="w-[58px] h-[100px] object-cover rounded-lg"
+/>
+
                     <div>
                         <h1 className="text-xl font-bold text-gray-900">DFU Analyzer</h1>
                         <p className="text-xs text-gray-500">AI-Powered Diagnostics</p>
@@ -1214,7 +1218,14 @@ const AuthPage = () => {
             <div className="relative w-full max-w-md p-8 space-y-8 bg-white/90 backdrop-blur-sm shadow-2xl rounded-2xl z-10">
                 <div className="flex flex-col items-center text-center">
                     <div className="flex items-center space-x-3">
-                        <img src="logo3.png" className="w-16 h-auto" alt="DFU Logo" />
+                                 <video
+    src={logoVideo}
+    autoPlay
+    loop
+    muted
+    playsInline
+    className="w-[58px] h-[100px] object-cover rounded-lg"
+/>
                         <h1 className="text-3xl font-bold text-gray-900">DFU Analyzer</h1>
                     </div>
                     <h2 className="mt-6 text-3xl font-bold text-gray-900">{isLogin ? 'Sign In' : 'Create Account'}</h2>
