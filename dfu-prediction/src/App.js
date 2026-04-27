@@ -469,8 +469,8 @@ const AnalyzeTool = ({ onAnalysisComplete, onMenuClick }) => {
             };
             
             const apiKey =process.env.REACT_APP_GOOGLE_API_KEY; // Will be replaced by environment
-const modelName = "gemini-2.0-flash"; // Use the stable 2.0 Flash model
-const apiUrl = `https://generativelanguage.googleapis.com/v1/models/${modelName}:generateContent?key=${apiKey}`;
+const modelName = "gemini-1.5-flash"; // Fallback to 1.5 to test quotas 
+const apiUrl = `https://generativelanguage.googleapis.com/v1beta/models/${modelName}:generateContent?key=${apiKey}`;
             const response = await fetch(apiUrl, {
                 method: 'POST',
                 headers: { 'Content-Type': 'application/json' },
@@ -501,8 +501,13 @@ const apiUrl = `https://generativelanguage.googleapis.com/v1/models/${modelName}
                 throw new Error("The model did not return a valid response.");
             }
         } catch (e) {
-            setError(e.message);
             console.error("Prediction Error:", e);
+            // Check if it's a rate limit error
+            if (e.message.includes("429") || e.message.includes("RESOURCE_EXHAUSTED")) {
+                setError("The AI service is currently busy or out of quota. Please wait a minute and try again.");
+            } else {
+                setError(e.message);
+            }
         } finally {
             setIsLoading(false);
         }
