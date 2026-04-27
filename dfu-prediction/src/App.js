@@ -469,8 +469,8 @@ const AnalyzeTool = ({ onAnalysisComplete, onMenuClick }) => {
             };
             
             const apiKey =process.env.REACT_APP_GOOGLE_API_KEY; // Will be replaced by environment
-const modelName = "gemini-2.5-flash-preview-09-2025"; // Use the stable 2.0 Flash model
-const apiUrl = `https://generativelanguage.googleapis.com/v1beta/models/${modelName}:generateContent?key=${apiKey}`;
+const modelName = "gemini-2.0-flash"; // Use the stable 2.0 Flash model
+const apiUrl = `https://generativelanguage.googleapis.com/v1/models/${modelName}:generateContent?key=${apiKey}`;
             const response = await fetch(apiUrl, {
                 method: 'POST',
                 headers: { 'Content-Type': 'application/json' },
