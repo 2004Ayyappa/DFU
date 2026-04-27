@@ -469,7 +469,7 @@ const AnalyzeTool = ({ onAnalysisComplete, onMenuClick }) => {
             };
             
             const apiKey =process.env.REACT_APP_GOOGLE_API_KEY; // Will be replaced by environment
-const modelName = "gemini-1.5-flash"; // Fallback to 1.5 to test quotas 
+const modelName = "gemini-2.0-flash"; 
 const apiUrl = `https://generativelanguage.googleapis.com/v1beta/models/${modelName}:generateContent?key=${apiKey}`;
             const response = await fetch(apiUrl, {
                 method: 'POST',
